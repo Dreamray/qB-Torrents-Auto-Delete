@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  qBittorrent Torrents Auto Delete
 // @author       Dreamray
-// @match        http://127.0.0.1:60009/*
+// @match        http://127.0.0.1:54321/*
 // @grant        none
 // ==/UserScript==
 
