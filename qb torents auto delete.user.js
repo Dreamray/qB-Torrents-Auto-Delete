@@ -25,7 +25,7 @@
         cycle                    = 2,   //删种周期，也是向qb发起检查请求的周期，单位分钟，建议1分钟以上，太短了浏览嚣可能卡死
         averageUpSpeedScale      = 350, //平均上传速度标尺，单位KB，小于此值，且当前下载速度小于设定值，且是正在下载的种子，会被删
         timeActiveScale          = 5,   //最小活动时间标尺，单位分钟，种子活动时间高于此值才计算活动时间内的平均上传速度
-        UpSpeedScale             = 320, //上传速度标尺，单位KB，本次检查的上传速度小于此值，且活动时间内的平均上传速度小于设定值，会被删
+        upSpeedScale             = 320, //上传速度标尺，单位KB，本次检查的上传速度小于此值，且活动时间内的平均上传速度小于设定值，会被删
         stalledDLTimeScale       = 20,  //种子未开始下载或下载中断后的等待时间标尺，超过此值的种子会被删，单位分钟
         queuedDLTimeScale        = 10,  //种子由于队列设置未开始下载的等待时间标尺，超过此值的种子会被删，单位分钟（刷流工具有时会一次添加多个种子，而由于qb的最大活动下载数设置导致有排队下载的情况适用）
         minFreeSpace             = 5,   //最小磁盘剩余空间，单位GB，小于此数值时会删除上次活动时间距现在最久的种子，建设设置为删种周期内最大下载数据量的2倍或更多倍
@@ -216,7 +216,7 @@
                                     torrentsSorted[i].state == 'downloading' && //正在下载的种子
                                     torrentsSorted[i].time_active > timeActiveScale * 60 && //活动时间大于设定值
                                     torrentsSorted[i].uploaded / torrentsSorted[i].time_active < averageUpSpeedScale * 1024 && //活动时间内平均速度小于设定值
-                                    torrentsSorted[i].upspeed < UpSpeedScale * 1024 //并且本次检查时的上传速度小于设定值
+                                    torrentsSorted[i].upspeed < upSpeedScale * 1024 //并且本次检查时的上传速度小于设定值
                                 ){
                                     if(
                                         torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
