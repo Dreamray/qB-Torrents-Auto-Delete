@@ -82,8 +82,6 @@
         //setTimeout setInterval
         task = setInterval(check, cycle * 60000)
     ;
-        console.log(hrTrackers);
-        console.log(hrHourRatio);
     // function isFreeTimeTracker(tracker){
     //     let domain = tracker.split('/');
     //     domain = domain[2];
