@@ -18,7 +18,8 @@
 7. 根据自己情况分别修改代码的 hrTrackerHourRatio、shuaPathList、keepCategoryList 部分
 8. Chrome打开 “http://你的qb地址:端口/api/v2/torrents/info?filter=paused” ，F12打开控制台，查看运行情况
    - 之所以推荐打开此地址，是因为此地址不像webui那样会定时刷新，省资源占用，如果你觉得打开webui更方便也可以
-9. 默认打开testMode，会以暂停代替删除，测试一段时间，查看被脚本暂停的种子，如没有误删，则把testMode的值改为0
+9. F12打开控制台查看运行情况
+10. 默认打开testMode，会以暂停代替删除，测试一段时间，查看被脚本暂停的种子，如没有误删，则把testMode的值改为0
 
 注意：
 HR时间、HR分享率部分没做测试，一般不会有问题，但也不保证不出问题
