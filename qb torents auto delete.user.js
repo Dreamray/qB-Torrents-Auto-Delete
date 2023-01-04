@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  qBittorrent Torrents Auto Delete
 // @author       Dreamray
-// @match        http://127.0.0.1:54321/*
+// @match        http://127.0.0.1:60009/*
 // @grant        none
 // ==/UserScript==
 
@@ -300,7 +300,7 @@
                                     };
                                     if(
                                         isHrTracker(torrentsSorted[i].tracker) && //有hr
-                                        isHrFinished(torrentsSorted[i].tracker,torrentsSorted[i].seeding_time,torrentsSorted[i].ratio) //hr达标了
+                                        (torrentsSorted[i].downloaded == 0 || isHrFinished(torrentsSorted[i].tracker,torrentsSorted[i].seeding_time,torrentsSorted[i].ratio)) //下载数据量为0不考虑hr或hr达标了
                                     ){
                                         if(
                                             (countOccurrences(torrentsSortedNames,torrentsSorted[i].name) > 1 || countOccurrences(torrentsSortedSizes,torrentsSorted[i].size) > 1) //有辅种
