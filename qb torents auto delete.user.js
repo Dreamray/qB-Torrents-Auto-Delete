@@ -16,12 +16,13 @@
      * 只删除上次活动时间距现在最久的种子：磁盘空间不足时只根据这一条件删种，其它条件太复杂也用不着，这一条就够了
      * 有辅种处理逻辑：删除做种状态的种子时检测有无同名或同大小种子，有则只删除种子不删除文件，无则文件也删
      * 只支持qb：抱歉本人只用qb，只在qb 4.4.3.1版本中测试过
+     * 有HR逻辑，不会删除HR时间或分享率未达标的种子（虽然刷流一般不加HR种但还是实现了这个功能）
      * 默认打开testMode，运行一段时间，确定不会出现误删种子后再关闭
      */
 
     //设置部分：
     const
-        testMode                 = 1,   //测试模式用暂停代替删种，防止误删。测试无误后可修改值为0关闭
+        testMode                 = 0,   //测试模式用暂停代替删种，防止误删。测试无误后可修改值为0关闭
         cycle                    = 2,   //删种周期，也是向qb发起检查请求的周期，单位分钟，建议1分钟以上，太短了浏览嚣可能卡死
         averageUpSpeedScale      = 350, //平均上传速度标尺，单位KB，小于此值，且当前下载速度小于设定值，且是正在下载的种子，会被删
         timeActiveScale          = 5,   //最小活动时间标尺，单位分钟，种子活动时间高于此值才计算活动时间内的平均上传速度
@@ -40,7 +41,8 @@
             'www.nicept.net':{hour:120,ratio:2},
             '52pt.site':{hour:24,ratio:-1}, //-1表示无分享率选项（无视分享率，只考察HR时长）
             'tracker.torrentleech.org':{hour:240,ratio:-1},
-            'tracker.tleechreload.org':{hour:240,ratio:-1}
+            'tracker.tleechreload.org':{hour:240,ratio:-1},
+            'ptsbao.club':{hour:24,ratio:-1}
         },
         shuaPathList = [ //只删除以下目录内的种子（不包括子目录，如果种子存放在以下目录的子目录中，子目录也必须加到此列表），建议刷流种子统一放此目录中
             'E:\\PT-Shua'
@@ -158,7 +160,7 @@
             return false;
         }
     };
-    function deleteTorrent(hash,name,reason,deleteFiles,callback){
+    function deleteTorrent(hash,name,domain,reason,deleteFiles,callback){
         method = testMode ? 'pause' : 'delete';
         delete_files = testMode ? '' : '&deleteFiles=' + deleteFiles;
         let xhrDelete = new XMLHttpRequest();
@@ -168,7 +170,7 @@
             if (xhrDelete.readyState == 4 && ((xhrDelete.status >= 200 && xhrDelete.status < 300) || xhrDelete.status == 304)) {
                 deletedTorrentIndex += 1;
                 nowDate = new Date();
-                console.log(nowDate.toLocaleTimeString() + '：成功删除第 ' + deletedTorrentIndex + ' 个 -> ' + name + ' 原因：' + reason);
+                console.log(nowDate.toLocaleTimeString() + '：成功删除第 ' + deletedTorrentIndex + ' 个 -> ' + name + ' --> ' + domain + ' ---> 原因：' + reason);
                 callback();
             }
         }
@@ -222,7 +224,7 @@
                                         torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
                                     ){
                                         willDelTorrentsSum += 1;
-                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'平均速度小于设定值',true,function(){ //删除文件
+                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'平均速度小于设定值',true,function(){ //删除文件
                                             console.log('文件已删除，停止继续删种，等待下一次检查');
                                         });
                                         break;
@@ -232,7 +234,7 @@
                                         !isHrTracker(torrentsSorted[i].tracker) //非 有hr
                                     ){
                                         willDelTorrentsSum += 1;
-                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'平均速度小于设定值',true,function(){ //删除文件
+                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'平均速度小于设定值',true,function(){ //删除文件
                                             console.log('文件已删除，停止继续删种，等待下一次检查');
                                         });
                                         break;
@@ -246,7 +248,7 @@
                                         torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
                                     ){
                                         willDelTorrentsSum += 1;
-                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'等待下载时间大于设定值',true,function(){ //删除文件
+                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'等待下载时间大于设定值',true,function(){ //删除文件
                                             console.log('文件已删除，停止继续删种，等待下一次检查');
                                         });
                                         break;
@@ -256,7 +258,7 @@
                                         !isHrTracker(torrentsSorted[i].tracker) //非 有hr
                                     ){
                                         willDelTorrentsSum += 1;
-                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'等待下载时间大于设定值',true,function(){ //删除文件
+                                        deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'等待下载时间大于设定值',true,function(){ //删除文件
                                             console.log('文件已删除，停止继续删种，等待下一次检查');
                                         });
                                         break;
@@ -267,7 +269,7 @@
                                     timeNow - torrentsSorted[i].added_on > queuedDLTimeScale * 60 //排队等待下载时间超过设定值
                                 ){
                                     willDelTorrentsSum += 1;
-                                    deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'队列下载时间大于设定值',true,function(){ //删除文件
+                                    deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'队列下载时间大于设定值',true,function(){ //删除文件
                                         console.log('种子已删除，继续处理其它种子');
                                     })
                                 };
@@ -282,7 +284,7 @@
                                             (countOccurrences(torrentsSortedNames,torrentsSorted[i].name) > 1 || countOccurrences(torrentsSortedSizes,torrentsSorted[i].size) > 1) //有辅种
                                         ){
                                             willDelTorrentsSum += 1;
-                                            deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'磁盘空间不足，删除上次活动时间距现在最久的种子（有辅种，保留文件）',false,function(){ //不删除文件
+                                            deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'磁盘空间不足，删除上次活动时间距现在最久的种子（有辅种，保留文件）',false,function(){ //不删除文件
                                                 console.log('文件未删除，磁盘空间仍不足，继续删种');
                                             })
                                         };
@@ -291,7 +293,7 @@
                                         ){
                                             willDelTorrentsSum += 1;
                                             setTimeout(function(){
-                                                deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'磁盘空间不足，删除上次活动时间距现在最久的种子和文件',true,function(){ //删除文件
+                                                deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'磁盘空间不足，删除上次活动时间距现在最久的种子和文件',true,function(){ //删除文件
                                                     console.log('文件已删除，停止继续删种，等待下一次检查磁盘剩余空间');
                                                 });
                                             },1000)
@@ -306,7 +308,7 @@
                                             (countOccurrences(torrentsSortedNames,torrentsSorted[i].name) > 1 || countOccurrences(torrentsSortedSizes,torrentsSorted[i].size) > 1) //有辅种
                                         ){
                                             willDelTorrentsSum += 1;
-                                            deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'磁盘空间不足，删除上次活动时间距现在最久的种子（有辅种，保留文件）',false,function(){ //不删除文件
+                                            deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'磁盘空间不足，删除上次活动时间距现在最久的种子（有辅种，保留文件）',false,function(){ //不删除文件
                                                 console.log('文件未删除，磁盘空间仍不足，继续删种');
                                             })
                                         };
@@ -315,7 +317,7 @@
                                         ){
                                             willDelTorrentsSum += 1;
                                             setTimeout(function(){
-                                                deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,'磁盘空间不足，删除上次活动时间距现在最久的种子和文件',true,function(){ //删除文件
+                                                deleteTorrent(torrentsSorted[i].hash,torrentsSorted[i].name,torrentsSorted[i].tracker.split('/')[2],'磁盘空间不足，删除上次活动时间距现在最久的种子和文件',true,function(){ //删除文件
                                                     console.log('文件已删除，停止继续删种，等待下一次检查磁盘剩余空间');
                                                 });
                                             },1000)
