@@ -74,6 +74,7 @@
         method,
         delete_files,
         diskFreeSpace,
+        connectionStatus,
         torrentsSortedNames,
         torrentsSortedSizes,
         willDelTorrentsSum,
@@ -186,8 +187,12 @@
             if (xhrMaindata.readyState == 4 && ((xhrMaindata.status >= 200 && xhrMaindata.status < 300) || xhrMaindata.status == 304)) {
                 maindata = JSON.parse(xhrMaindata.responseText);
                 diskFreeSpace = maindata.server_state.free_space_on_disk;
+                connectionStatus = maindata.server_state.connection_status;
                 // console.log('磁盘剩余空间：');
                 // console.log(diskFreeSpace / 1024 / 1024 / 1024 + 'G');
+                connectionStatus = maindata.server_state.connection_status;
+                // console.log('连接状态:');
+                // console.log(connectionStatus);
                 let xhrTorrents = new XMLHttpRequest();
                 xhrTorrents.open('GET', '/api/v2/torrents/info', true);
                 xhrTorrents.send();
@@ -242,7 +247,8 @@
                                 };
                                 if(
                                     torrentsSorted[i].state == 'stalledDL' && //未开始下载或下载中断的种子
-                                    timeNow - torrentsSorted[i].added_on > stalledDLTimeScale * 60 //等待下载时间超过设定值
+                                    timeNow - torrentsSorted[i].added_on > stalledDLTimeScale * 60 && //等待下载时间超过设定值
+                                    connectionStatus == 'connected' //防止断网后无下载的误删
                                 ){
                                     if(
                                         torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
