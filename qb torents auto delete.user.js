@@ -12,11 +12,11 @@
     'use strict';
 
     /**
-     * 根据最近一段时间内的种子平均上传速删种，可避免一开始上传很快最后很慢，计算整个活动时间的平均上传速度很高的情况
+     * 根据最近一段时间内种子的平均上传速删种，可避免一开始上传很快最后很慢，计算整个活动时间内的平均上传速度依然很快从而不删的情况
      * 磁盘空间不足时删除上次活动时间距现在最久的种子
-     * 辅种处理逻辑，删除做种状态的种子时检测有无同名或同大小种子，有则只删除种子保留文件
+     * 有辅种处理逻辑，删除种子前检测有无同名或同大小种子，有则只删除种子保留文件
      * HR逻辑，不会删除HR时间或分享率未达标的种子（虽然刷流一般不加HR种但还是实现了此功能）
-     * 只支持qb，只在qb 4.4.3.1版本中测试通过
+     * 只支持qb，只在Windows版qb 4.4.3.1 版本中测试通过
      * 默认打开testMode，运行一段时间，确定不会出现误删后再关闭
      */
 
@@ -102,6 +102,13 @@
     //         return false;
     //     }
     // }
+    if(window.Notification && Notification.permission !== "granted"){
+        Notification.requestPermission(function (status) {
+            if (Notification.permission !== status) {
+                Notification.permission = status;
+            }
+        });
+    };
     function isHrTracker(tracker){
         let domain = tracker.split('/');
         domain = domain[2];
@@ -163,6 +170,15 @@
                 nowDate = new Date();
                 console.log('%c' + nowDate.toLocaleTimeString() + '：成功删除第 ' + deletedTorrentIndex + ' 个 -> ' + name + ' --> ' + size + 'GB --->' +domain + ' ----> 原因：' + reason,'color:#f29766');
                 callback();
+                if(window.Notification && Notification.permission === "granted"){
+                    let notify = new Notification('种子已删除',{
+                        icon:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/New_qBittorrent_Logo.svg/60px-New_qBittorrent_Logo.svg.png',
+                        body:name
+                    });
+                    notify.onclick = function(){
+                        window.top.focus();
+                    }
+                }
             }
         }
     };
@@ -369,6 +385,15 @@
                         document.title = document.title.substring(1) + document.title.charAt(0);
                         l++;
                     },1000);
+                    if(window.Notification && Notification.permission === "granted"){
+                        let notify = new Notification('红种警告',{
+                            icon:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/New_qBittorrent_Logo.svg/60px-New_qBittorrent_Logo.svg.png',
+                            body:'磁盘即将爆仓<br>请修改设置或手动删种'
+                        });
+                        notify.onclick = function(){
+                            window.top.focus();
+                        };
+                    };
                     setTimeout(function(){
                             nowDate = new Date();
                             console.log('%c' + nowDate.toLocaleTimeString() + '：没有可删除文件的种子，磁盘即将爆仓，请检查种子分类、路径设置或修改脚本的保留分类/刷流路径或手动删种','background-color:#d12f2e;color:#e8eaed');
