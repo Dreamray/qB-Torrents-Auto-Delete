@@ -388,7 +388,7 @@
                     if(window.Notification && Notification.permission === "granted"){
                         let notify = new Notification('红种警告',{
                             icon:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/New_qBittorrent_Logo.svg/60px-New_qBittorrent_Logo.svg.png',
-                            body:'磁盘即将爆仓<br>请修改设置或手动删种'
+                            body:'磁盘即将爆仓，请修改设置或手动删种'
                         });
                         notify.onclick = function(){
                             window.top.focus();
