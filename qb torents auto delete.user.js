@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         qB Torrents Auto Delete
+// @name         qB Torrents Auto Delete 5
 // @namespace    -
-// @version      2.1
+// @version      5
 // @description  qBittorrent Torrents Auto Delete
 // @author       Dreamray
 // @match        http://127.0.0.1:60009/*
@@ -26,14 +26,14 @@
         cycle               = 2,   //删种周期，即向qb发起检查请求的周期，单位分钟
         averageUpSpeedScale = 500, //上传速度标尺，单位KB/s，timeScale时间内的上传速度小于此值，会被删
         // timeActiveScale  = 5,   //（已弃用）最小活动时间标尺，单位分钟，种子活动时间高于此值才计算活动时间内的平均上传速度
-        timeScale           = 5,   //时间标尺，此时间内平均上传速度低于averageUpSpeedScale会被删，单位分钟。例：值为5表示5分钟前到现在的时间段
+        timeScale           = 6,   //时间标尺，此时间内平均上传速度低于averageUpSpeedScale会被删，单位分钟。例：值为5表示5分钟前到现在的时间段
         // upSpeedScale     = 350, //（已弃用）上传速度标尺，单位KB
-        stalledDLTimeScale  = 30,  //种子未开始下载或下载中断后的等待时间标尺，超过此值会被删，单位分钟
-        queuedDLTimeScale   = 20,  //种子由于队列设置未开始下载的等待时间标尺，超过此值会被删，单位分钟（刷流工具有时会一次添加多个种子，而由于qb的最大活动下载数设置导致有排队下载的情况适用）
+        stalledDLTimeScale  = 20,  //种子未开始下载或下载中断后的等待时间标尺，超过此值会被删，单位分钟
+        queuedDLTimeScale   = 15,  //种子由于队列设置未开始下载的等待时间标尺，超过此值会被删，单位分钟（刷流工具有时会一次添加多个种子，而由于qb的最大活动下载数设置导致有排队下载的情况适用）
         minFreeSpace        = 5,   //最小磁盘剩余空间，单位GB，小于此数值时会删除上次活动时间最久的种子，建议设置为删种周期内最大下载数据量的2倍或更多倍
         hrTrackerHourRatio  = {    //有HR站点的 tracker地址域名部分：{HR时长,分享率}
             'pt.btschool.club':{hour:20,ratio:1}, //HR时长 和 分享率 通常为或关系，即一个达到要求即可
-            'www.nicept.net':{hour:120,ratio:2},
+            'www.nicept.net':{hour:72,ratio:2},
             '52pt.site':{hour:24,ratio:-1}, //-1表示无分享率选项（无视分享率，只考察HR时长）
             'tracker.torrentleech.org':{hour:240,ratio:-1},
             'tracker.tleechreload.org':{hour:240,ratio:-1},
@@ -50,6 +50,8 @@
             'Exam'
         ]
     ;
+    //设置部分结束
+    
     if(window.Notification && Notification.permission !== "granted"){
         Notification.requestPermission(function (status) {
             if (Notification.permission !== status) {
@@ -60,9 +62,15 @@
     let
         hrTrackers = Object.keys(hrTrackerHourRatio),
         hrHourRatio = Object.values(hrTrackerHourRatio),
-        checkTime = Math.ceil(timeScale / cycle) + 1, //算出需要检查的最小次数，检查次数大于等于此值，时间才能符合timeScale设置，才能计算timeScale时间内的平均上传速度
-        mutiCheckTorrentsSorted = [],
+        recordTimesDownloading = Math.ceil(timeScale / cycle) + 1, //对于正在下载的种子，算出需要检查的最小次数，检查次数大于等于此值，时间才能符合timeScale时长，才能计算timeScale时间内的平均上传速度
+        recordTimesStalledDL = Math.ceil(stalledDLTimeScale / cycle) + 1, //对于未开始下载或下载中断的种子，算出需要检查的最小次数，检查次数大于等于此值，时间才能符合stalledDLTimeScale
+        recordTimesQueuedDL = Math.ceil(queuedDLTimeScale / cycle) + 1, //对于排队下载的种子，算出需要检查的最小次数，检查次数大于等于此值，时间才能符合queuedDLTimeScale
+        recordTimesArr = [recordTimesDownloading,recordTimesStalledDL,recordTimesQueuedDL],
+        recordTimesArrSorted = recordTimesArr.sort((arr1, arr2) => (arr1 < arr2) ? 1 : (arr1 > arr2) ? -1 : 0), //降序排列
+        recordTimesMax = recordTimesArrSorted[0],
+        mutiListSortedArr = [],
         deletedTorrentIndex,
+        connectionStatus,
         countOccurrences = (arr,val) => arr.reduce((a, v) => (v === val ? a + 1 : a), 0),
         isHrTracker = function(tracker){
             if(hrTrackers.indexOf(tracker.split('/')[2]) !== -1){
@@ -106,45 +114,102 @@
                 return false;
             }
         },
-        isAveUpspeedTooLow = function(hash){
-            let indexOfFirstCheck = -1,
-                indexOfLastCheck  = -1,
-                mutiCheckdownloadingTimes = 0;
-            for(let j=0;j<mutiCheckTorrentsSorted.length;j++){ //循环 每次检查后得到种子列表所存放的数组
-                for(let k=mutiCheckTorrentsSorted[j].length-1;k>=0;k--){ //循环 数组中的每个种子列表。用倒序循环是因为downloading状态的种子按last_activity由久到新排列肯定排到最后，能尽快break，减少循环次数
-                    if(mutiCheckTorrentsSorted[j][k].infohash_v1 == hash){ //hash相同，找到种子所在位置了，注意：每次检查的的此种子位置可能不一样，因为活种的last_activity是不断变化的
-                        if(j==0){
-                            indexOfFirstCheck = k; //数组中首个种子列表中的此种子的index，可能没有（种子刚添加）
-                        };
-                        if(j==mutiCheckTorrentsSorted.length-1){
-                            indexOfLastCheck = k; //数组中最后一个种子列表中的此种子的index
-                        };
-                        if(mutiCheckTorrentsSorted[j][k].state == 'downloading'){ //该种子是不是downloading状态
-                            mutiCheckdownloadingTimes++; //是的话，记录一次
-                        }
-                        break;
-                    }
+        averageUpspeed = function(hash,torrentState,recordTimes){
+            let
+                torrentIndexOfFirst = -1,
+                torrentIndexOfLast  = -1,
+                // downloadingTimesOfMutiList = 0,
+                listIndexOfLast = mutiListSortedArr.length-1,
+                listIndexOfFirst = mutiListSortedArr.length < recordTimes ? 0 : mutiListSortedArr.length - recordTimes
+            ;
+            // console.log('listIndexOfFirst:'+listIndexOfFirst);
+            // console.log('listIndexOfLast:'+listIndexOfLast);
+            for(let i=mutiListSortedArr[listIndexOfLast].length-1;i>=0;i--){ //循环最后一个取 已上传 值的列表（数组中最后一个），用倒序是因为downloading或stalledDL状态的种子按last_activity由久到新排列肯定排到最后，能尽快break，减少循环次数
+                if(mutiListSortedArr[listIndexOfLast][i].infohash_v1 == hash){ //hash相同，找到了
+                    torrentIndexOfLast = i; //种子在列表中的index
                 }
             };
-            //console.log('mutiCheckdownloadingTimes:'+mutiCheckdownloadingTimes);
-            //console.log('indexOfFirstCheck:'+indexOfFirstCheck);
-            //console.log('indexOfLastCheck:'+indexOfLastCheck);
-            if(mutiCheckdownloadingTimes == checkTime){ //每次检查都是downloading状态才删种，一共检查了checkTime次，每次都是downloading状态，所以downloading状态的次数=检查数次
-                let averageUpspeed = (mutiCheckTorrentsSorted[mutiCheckTorrentsSorted.length - 1][indexOfLastCheck].uploaded - mutiCheckTorrentsSorted[0][indexOfFirstCheck].uploaded) / (cycle * (checkTime - 1) * 60);
-                //console.log('averageUpspeed:'+Math.round(averageUpspeed/1024*100)/100+'KB/s');
-                if(averageUpspeed < averageUpSpeedScale * 1024){ //平均速度小于设定值
-                    return averageUpspeed; //返回平均速度，供后边删除种子时log输出
-                }else{
-                    return false; //只返回假就可以，后边用不到速度值
+            for(let i=mutiListSortedArr[listIndexOfFirst].length-1;i>=0;i--){//循环第一个取 已上传 值的列表
+                if(mutiListSortedArr[listIndexOfFirst][i].infohash_v1 == hash){
+                    torrentIndexOfFirst = i;
                 }
+            };
+            if(
+                torrentIndexOfFirst > -1 && //种子必须存在于第一次取值的列表中，不存在的话无法取 已上传 值
+                mutiListSortedArr.length >= recordTimes //数组长度>=记录次数，时间持续所设定的时间以上
+            ){
+                // console.log('首次取值状态：'+mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state);
+                // console.log('末次取值状态：'+mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].state);
+                if(torrentState == 'downloading'){
+                    if(
+                        mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state == 'downloading' //对于现在downloading状态的种子，第一次取值时也必须是downloading状态，保证downloading持续时间超过timeScale
+                    ){
+                        // console.log('上传量last: '+mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].uploaded);
+                        // console.log('上传量first: '+mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].uploaded);
+                        // console.log('上传量差: '+(mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].uploaded - mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].uploaded));
+                        // console.log('平均上传速度：'+(Math.round((mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].uploaded - mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].uploaded) / (cycle * (recordTimesDownloading - 1) * 60)/1024*100)/100)+' KB/s');
+                        return (mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].uploaded - mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].uploaded) / (cycle * (recordTimes - 1) * 60);
+                        //let averageUpspeed = (mutiListSortedArr[mutiListSortedArr.length - 1][torrentIndexOfLast].uploaded - mutiListSortedArr[mutiListSortedArr.length-recordTimesDownloading][torrentIndexOfFirst].uploaded) / (cycle * (recordTimesMax - 1) * 60);
+                    }else{
+                        return '持续时间太短无法计算';
+                    }
+                };
+                if(
+                    torrentState == 'stalledDL' &&
+                    connectionStatus == 'connected' //防止断网后误删
+                ){
+                    if(
+                        mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state == 'downloading' ||
+                        mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state == 'stalledDL' //对于stalledDL状态的种子，第一次取值时必须是downloading或stalledDL状态，保证已添加时间超过stalledDLTimeScale
+                    ){
+                        return (mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].uploaded - mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].uploaded) / (cycle * (recordTimesStalledDL - 1) * 60);
+                    }else{
+                        return '持续时间太短无法计算'; //计算平均速度的条件不符合，返回一个超大数值，便于后续判断
+                    }
+                }
+            }else{
+                return '持续时间太短无法计算';
+            }
+        },
+        isQueuedDLTooLong = function(hash){
+            let
+                torrentIndexOfFirst = -1,
+                torrentIndexOfLast  = -1,
+                listIndexOfLast = mutiListSortedArr.length-1,
+                listIndexOfFirst = mutiListSortedArr.length < recordTimesQueuedDL ? 0 : mutiListSortedArr.length - recordTimesQueuedDL
+            ;
+            for(let i=mutiListSortedArr[listIndexOfLast].length-1;i>=0;i--){ //循环最后一个列表（数组中最后一个），用倒序是因为queuedDL状态的种子按last_activity由久到新排列肯定排到最后，能尽快break，减少循环次数
+                if(mutiListSortedArr[listIndexOfLast][i].infohash_v1 == hash){ //hash相同，找到了
+                    torrentIndexOfLast = i; //种子在列表中的index
+                }
+            };
+            for(let i=mutiListSortedArr[listIndexOfFirst].length-1;i>=0;i--){//循环第一个列表
+                if(mutiListSortedArr[listIndexOfFirst][i].infohash_v1 == hash){
+                    torrentIndexOfFirst = i;
+                }
+            };
+            if(
+                torrentIndexOfFirst > -1 && //种子必须存在于第一次取值的列表中，不存在的话无法判断其状态
+                mutiListSortedArr.length >= recordTimesQueuedDL //数组长度>=记录次数，时间持续所设定的时间以上
+            ){
+                if(
+                    mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].state == 'queuedDL' &&
+                    mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state == 'queuedDL' //第一次和最后一次检查都是queuedDL状态才删种
+                ){
+                    return true;
+                }else{
+                    return false;
+                }
+            }else{
+                return false;
             }
         },
         deleteTorrent = function(hash,name,size,domain,reason,isDeleteFile,callback){
             let
-                method = testMode ? 'pause' : 'delete',
-                param = testMode ? '' : '&deleteFiles=' + isDeleteFile,
-                xhrDelete = new XMLHttpRequest();
-            xhrDelete.open('GET', '/api/v2/torrents/' + method + '?hashes=' + hash + param, true);
+                url = testMode ? '/api/v2/torrents/pause?hashes=' + hash : '/api/v2/torrents/delete?hashes=' + hash + '&deleteFiles=' + isDeleteFile,
+                xhrDelete = new XMLHttpRequest()
+            ;
+            xhrDelete.open('GET', url, true);
             xhrDelete.send();
             xhrDelete.onreadystatechange = function () {
                 if(xhrDelete.readyState == 4 && ((xhrDelete.status >= 200 && xhrDelete.status < 300) || xhrDelete.status == 304)){
@@ -154,7 +219,6 @@
                     callback();
                     if(window.Notification && Notification.permission === "granted"){
                         let notify = new Notification('种子已删除',{
-                            icon:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/New_qBittorrent_Logo.svg/60px-New_qBittorrent_Logo.svg.png',
                             body:name
                         });
                         notify.onclick = function(){
@@ -166,18 +230,18 @@
         },
         checkAndDelete = function(){
             deletedTorrentIndex = 0;
-            let nowTime,
-                nowUnixTime = Math.floor(Date.now() / 1000), //现在时间，unix格式
+            let
+                nowTime,
                 willDelTorrentsSum = 0,
                 fileDeletedTorrentsSum = 0,
-                xhrMaindata = new XMLHttpRequest();
+                xhrMaindata = new XMLHttpRequest()
+            ;
             xhrMaindata.open('GET', '/api/v2/sync/maindata', true);
             xhrMaindata.send();
-            xhrMaindata.onreadystatechange = function () {
+            xhrMaindata.onreadystatechange = function(){
                 if(xhrMaindata.readyState == 4 && ((xhrMaindata.status >= 200 && xhrMaindata.status < 300) || xhrMaindata.status == 304)){
                     let maindata = JSON.parse(xhrMaindata.responseText),
                         diskFreeSpace = maindata.server_state.free_space_on_disk,
-                        connectionStatus = maindata.server_state.connection_status,
                         torrents = Object.values(maindata.torrents),
                         torrentsSorted = torrents.sort((obj1, obj2) => (obj1.last_activity > obj2.last_activity) ? 1 : (obj1.last_activity < obj2.last_activity) ? -1 : 0), //由小到大排序，即距现在最久在最前
                         torrentsSortedNames = torrentsSorted.map(item =>{
@@ -185,31 +249,28 @@
                         }),
                         torrentsSortedSizes = torrentsSorted.map(item =>{
                             return item.size
-                        });
-                    if(mutiCheckTorrentsSorted.length < checkTime){
-                        mutiCheckTorrentsSorted.push(torrentsSorted);
+                        })
+                    ;
+                    connectionStatus = maindata.server_state.connection_status;
+                    if(mutiListSortedArr.length < recordTimesMax){
+                        mutiListSortedArr.push(torrentsSorted);
                     }else{
-                        mutiCheckTorrentsSorted.shift();
-                        mutiCheckTorrentsSorted.push(torrentsSorted);
+                        mutiListSortedArr.shift();
+                        mutiListSortedArr.push(torrentsSorted);
                     }; //这个if else的意思是：把每次检查的种子列表存到数组，此数组的长度根据需要的检查次数得出，多了就去掉第一个，然后在末尾追加，所以数据永远是最新的，供后边取uploaded计算平均速度
-                    //console.log(mutiCheckTorrentsSorted);
+                    //console.log(mutiListSortedArr);
                     for(let i=0;i<torrentsSorted.length;i++){
                         if(
                             isShuaFolder(torrentsSorted[i].save_path) && //路径是刷流专放路径
                             !isKeepCategory(torrentsSorted[i].category) //非 保留的分类
                         ){
-                            // if(
-                            //     torrentsSorted[i].state == 'downloading' && //正在下载的种子
-                            //     torrentsSorted[i].infohash_v1
-                            //     mutiCheckTorrentsSorted[3].
-                            //     torrentsSorted[i].time_active > timeActiveScale * 60 && //活动时间大于设定值
-                            //     torrentsSorted[i].uploaded / torrentsSorted[i].time_active < averageUpSpeedScale * 1024 && //活动时间内平均速度小于设定值
-                            //     torrentsSorted[i].upspeed < upSpeedScale * 1024 && //本次检查时的上传速度小于设定值
-                            //     torrentsSorted[i].downloaded > torrentsSorted[i].dlspeed * timeActiveScale * 60 //总下载量大于设定时间内的近似下载量（防止种子添加后长时间等待下载，刚开始下载时就被删除的情况（time_active包括等待下载的时间所以达到设定值了），添加这一条件后能基本保证下载时间持续timeActiveScale以上）
-                            // )
                             if(torrentsSorted[i].state == 'downloading'){ //正在下载的种子
-                                let aveUpspeed = isAveUpspeedTooLow(torrentsSorted[i].infohash_v1); //判断上传速度，返回结果赋值，上传速度小于设定值则返回上传速度，否则返回false
-                                if(aveUpspeed){
+                                let aveUpspeed = averageUpspeed(torrentsSorted[i].infohash_v1,'downloading',recordTimesDownloading);
+                                // console.log(timeScale+' 分钟内平均上传速度：'+(aveUpspeed == '持续时间太短无法计算'?aveUpspeed:(Math.round(aveUpspeed/1024*100)/100+' KB/s')) + ' -> ' + torrentsSorted[i].name + ' -> ' + torrentsSorted[i].magnet_uri.split('%2f')[2]);
+                                if(
+                                    aveUpspeed != '持续时间太短无法计算' &&
+                                    aveUpspeed < averageUpSpeedScale * 1024 //平均上传速度小于设定值
+                                ){
                                     if(
                                         torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
                                     ){
@@ -235,41 +296,47 @@
                             };
                             if(
                                 torrentsSorted[i].state == 'stalledDL' && //未开始下载或下载中断的种子
-                                nowUnixTime - torrentsSorted[i].added_on > stalledDLTimeScale * 60 && //等待下载时间超过设定值
-                                connectionStatus == 'connected' //防止断网后无下载时的误删
+                                connectionStatus == 'connected' //防止断网后误删
                             ){
+                                let stalledDLAveUpspeed = averageUpspeed(torrentsSorted[i].infohash_v1,'stalledDL',recordTimesStalledDL);
+                                // console.log(stalledDLTimeScale+' 分钟内平均上传速度：'+(stalledDLAveUpspeed == '持续时间太短无法计算'?stalledDLAveUpspeed:(Math.round(stalledDLAveUpspeed/1024*100)/100+' KB/s')) + ' -> ' + torrentsSorted[i].name + ' -> ' + torrentsSorted[i].magnet_uri.split('%2f')[2]);
                                 if(
-                                    torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
+                                    stalledDLAveUpspeed != '持续时间太短无法计算' &&
+                                    stalledDLAveUpspeed < averageUpSpeedScale * 1024 //平均上传速度小于设定值
                                 ){
-                                    willDelTorrentsSum++;
-                                    deleteTorrent(torrentsSorted[i].infohash_v1,torrentsSorted[i].name,Math.round(torrentsSorted[i].size/1024/1024/1024*100)/100,torrentsSorted[i].tracker.split('/')[2],'等待下载时间 > ' + stalledDLTimeScale + '分钟',true,function(){ //删除文件
-                                        console.log('%c' + '文件已删除，停止继续删种，等待下一次检查','color:#f29766');
-                                    });
-                                    if(torrentsSorted[i].downloaded > 512*1024*1024){ //删除的文件大于512MB就break，不处理其它种子了，否则继续处理其它
-                                        fileDeletedTorrentsSum++;
-                                        break;
-                                    }
-                                };
-                                if(
-                                    torrentsSorted[i].progress >= 0.5 && //进度大于50%，需要考虑hr
-                                    !isHrTracker(torrentsSorted[i].tracker) //非 有hr
-                                ){
-                                    willDelTorrentsSum++;
-                                    deleteTorrent(torrentsSorted[i].infohash_v1,torrentsSorted[i].name,Math.round(torrentsSorted[i].size/1024/1024/1024*100)/100,torrentsSorted[i].tracker.split('/')[2],'等待下载时间 > ' + stalledDLTimeScale + '分钟',true,function(){ //删除文件
-                                        console.log('%c' + '文件已删除，停止继续删种，等待下一次检查','color:#f29766');
-                                    });
-                                    if(torrentsSorted[i].downloaded > 512*1024*1024){ //删除的文件大于512MB就break，不处理其它种子了，否则继续处理其它
-                                        fileDeletedTorrentsSum++;
-                                        break;
+                                    if(
+                                        torrentsSorted[i].progress < 0.5 //进度小于50%，无需考虑hr
+                                    ){
+                                        willDelTorrentsSum++;
+                                        deleteTorrent(torrentsSorted[i].infohash_v1,torrentsSorted[i].name,Math.round(torrentsSorted[i].size/1024/1024/1024*100)/100,torrentsSorted[i].tracker.split('/')[2],'等待下载时间 > ' + stalledDLTimeScale + '分钟 或 平均上传速度 ' + Math.round(stalledDLAveUpspeed/1024*100)/100 + ' < ' + averageUpSpeedScale + ' KB/s',true,function(){ //删除文件
+                                            console.log('%c' + '文件已删除，停止继续删种，等待下一次检查','color:#f29766');
+                                        });
+                                        if(torrentsSorted[i].downloaded > 512*1024*1024){ //删除的文件大于512MB就break，不处理其它种子了，否则继续处理其它
+                                            fileDeletedTorrentsSum++;
+                                            break;
+                                        }
+                                    };
+                                    if(
+                                        torrentsSorted[i].progress >= 0.5 && //进度大于50%，需要考虑hr
+                                        !isHrTracker(torrentsSorted[i].tracker) //非 有hr
+                                    ){
+                                        willDelTorrentsSum++;
+                                        deleteTorrent(torrentsSorted[i].infohash_v1,torrentsSorted[i].name,Math.round(torrentsSorted[i].size/1024/1024/1024*100)/100,torrentsSorted[i].tracker.split('/')[2],'等待下载时间 > ' + stalledDLTimeScale + '分钟 或 平均上传速度 ' + Math.round(stalledDLAveUpspeed/1024*100)/100 + ' < ' + averageUpSpeedScale + ' KB/s',true,function(){ //删除文件
+                                            console.log('%c' + '文件已删除，停止继续删种，等待下一次检查','color:#f29766');
+                                        });
+                                        if(torrentsSorted[i].downloaded > 512*1024*1024){ //删除的文件大于512MB就break，不处理其它种子了，否则继续处理其它
+                                            fileDeletedTorrentsSum++;
+                                            break;
+                                        }
                                     }
                                 }
                             };
                             if(
                                 torrentsSorted[i].state == 'queuedDL' && //排队下载的种子
-                                nowUnixTime - torrentsSorted[i].added_on > queuedDLTimeScale * 60 //排队等待下载时间超过设定值
+                                isQueuedDLTooLong(torrentsSorted[i].infohash_v1) //排队等待下载时间超过设定值
                             ){
                                 willDelTorrentsSum++;
-                                deleteTorrent(torrentsSorted[i].infohash_v1,torrentsSorted[i].name,Math.round(torrentsSorted[i].size/1024/1024/1024*100)/100,torrentsSorted[i].tracker.split('/')[2],'队列下载时间 > ' + queuedDLTimeScale + '分钟',true,function(){ //删除文件
+                                deleteTorrent(torrentsSorted[i].infohash_v1,torrentsSorted[i].name,Math.round(torrentsSorted[i].size/1024/1024/1024*100)/100,torrentsSorted[i].magnet_uri.split('%2f')[2],'队列下载时间 > ' + queuedDLTimeScale + '分钟',true,function(){ //删除文件
                                     console.log('%c' + '种子已删除，继续处理其它种子','color:#f29766');
                                 });
                                 if(torrentsSorted[i].downloaded > 512*1024*1024){ //删除的文件大于512MB就break，不处理其它种子了，否则继续处理其它
@@ -331,8 +398,10 @@
                         nowTime = new Date();
                         console.log('%c' + nowTime.toLocaleTimeString() + '：本次检查共有 ' + willDelTorrentsSum + ' 个符合删除条件的种子','color:#f29766');
                     };
-                    let titleScrollInterval,
-                        l=0;
+                    let
+                        titleScrollInterval,
+                        l=0
+                    ;
                     if(fileDeletedTorrentsSum == 0 && diskFreeSpace < minFreeSpace * 1024 * 1024 * 1024){
                         document.title = '红种警告：磁盘即将爆仓，请修改设置或手动删种　　';
                         titleScrollInterval = setInterval(function(){
