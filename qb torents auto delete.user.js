@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         qB Torrents Auto Delete 5
+// @name         qB Torrents Auto Delete
 // @namespace    -
-// @version      5
+// @version      2.2
 // @description  qBittorrent Torrents Auto Delete
 // @author       Dreamray
 // @match        http://127.0.0.1:60009/*
