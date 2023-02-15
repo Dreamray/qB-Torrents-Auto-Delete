@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         qB Torrents Auto Delete
 // @namespace    -
-// @version      2.2
+// @version      3.0
 // @description  qBittorrent Torrents Auto Delete
 // @author       Dreamray
-// @match        http://127.0.0.1:60009/*
+// @match        http://localhost:60009/*
 // @grant        none
 // ==/UserScript==
 
@@ -37,7 +37,8 @@
             '52pt.site':{hour:24,ratio:-1}, //-1表示无分享率选项（无视分享率，只考察HR时长）
             'tracker.torrentleech.org':{hour:240,ratio:-1},
             'tracker.tleechreload.org':{hour:240,ratio:-1},
-            'ptsbao.club':{hour:24,ratio:-1}
+            'ptsbao.club':{hour:24,ratio:-1},
+            'tracker.carpt.net':{hour:24,ratio:2}
         },
         shuaPathList = [ //刷流种子存放路径，只删除以下目录内的种子（不包括子目录，如果种子存放在以下目录的子目录中，子目录也必须加到此列表），建议刷流种子统一放此目录中。注意windows系统冒号后两个斜杠，其它系统请自行修改
             'E:\\PT-Shua'
@@ -48,16 +49,42 @@
             'H',
             'Music',
             'Exam'
-        ]
+        ],
+        qbittorrent = {
+            username:'dreamray',
+            password:'idreamray'
+        }
     ;
-    //设置部分结束
-    
+
+    //登录
+    let login = new XMLHttpRequest();
+    login.open('POST', '/api/v2/auth/login', true);
+    login.setRequestHeader('Content-type', 'application/x-www-form-urlencoded; charset=UTF-8');
+    login.send('username=' + qbittorrent.username + '&password=' + qbittorrent.password);
+    login.onreadystatechange = function(){
+        if(login.readyState == 4){
+            if(((login.status >= 200 && login.status < 300) || login.status == 304) && login.responseText == 'Ok.'){
+                console.log('登录成功');
+                let url = window.location.href;
+                if(url.indexOf('_refresh=false') == -1){
+                    if(url.indexOf('?') == -1){
+                        window.location.href = url + '?_refresh=false'
+                    }else{
+                        window.location.href = url + '&_refresh=false'
+                    }
+                }
+            }else{
+                console.log('登录失败，删种不会执行，请修改用户名或密码并刷新页面');
+            }
+        }
+    };
+
     if(window.Notification && Notification.permission !== "granted"){
         Notification.requestPermission(function (status) {
             if (Notification.permission !== status) {
                 Notification.permission = status;
             }
-        });
+        })
     };
     let
         hrTrackers = Object.keys(hrTrackerHourRatio),
@@ -71,6 +98,7 @@
         mutiListSortedArr = [],
         deletedTorrentIndex,
         connectionStatus,
+        titleChangedTimes = 0,
         countOccurrences = (arr,val) => arr.reduce((a, v) => (v === val ? a + 1 : a), 0),
         isHrTracker = function(tracker){
             if(hrTrackers.indexOf(tracker.split('/')[2]) !== -1){
@@ -138,8 +166,8 @@
                 torrentIndexOfFirst > -1 && //种子必须存在于第一次取值的列表中，不存在的话无法取 已上传 值
                 mutiListSortedArr.length >= recordTimes //数组长度>=记录次数，时间持续所设定的时间以上
             ){
-                // console.log('首次取值状态：'+mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state);
-                // console.log('末次取值状态：'+mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].state);
+                console.log('首次取值状态：'+mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state);
+                console.log('末次取值状态：'+mutiListSortedArr[listIndexOfLast][torrentIndexOfLast].state);
                 if(torrentState == 'downloading'){
                     if(
                         mutiListSortedArr[listIndexOfFirst][torrentIndexOfFirst].state == 'downloading' //对于现在downloading状态的种子，第一次取值时也必须是downloading状态，保证downloading持续时间超过timeScale
@@ -266,7 +294,7 @@
                         ){
                             if(torrentsSorted[i].state == 'downloading'){ //正在下载的种子
                                 let aveUpspeed = averageUpspeed(torrentsSorted[i].infohash_v1,'downloading',recordTimesDownloading);
-                                // console.log(timeScale+' 分钟内平均上传速度：'+(aveUpspeed == '持续时间太短无法计算'?aveUpspeed:(Math.round(aveUpspeed/1024*100)/100+' KB/s')) + ' -> ' + torrentsSorted[i].name + ' -> ' + torrentsSorted[i].magnet_uri.split('%2f')[2]);
+                                console.log(timeScale+' 分钟内平均上传速度：'+(aveUpspeed == '持续时间太短无法计算'?aveUpspeed:(Math.round(aveUpspeed/1024*100)/100+' KB/s')) + ' -> ' + torrentsSorted[i].name + ' -> ' + torrentsSorted[i].magnet_uri.split('%2f')[2]);
                                 if(
                                     aveUpspeed != '持续时间太短无法计算' &&
                                     aveUpspeed < averageUpSpeedScale * 1024 //平均上传速度小于设定值
@@ -299,7 +327,7 @@
                                 connectionStatus == 'connected' //防止断网后误删
                             ){
                                 let stalledDLAveUpspeed = averageUpspeed(torrentsSorted[i].infohash_v1,'stalledDL',recordTimesStalledDL);
-                                // console.log(stalledDLTimeScale+' 分钟内平均上传速度：'+(stalledDLAveUpspeed == '持续时间太短无法计算'?stalledDLAveUpspeed:(Math.round(stalledDLAveUpspeed/1024*100)/100+' KB/s')) + ' -> ' + torrentsSorted[i].name + ' -> ' + torrentsSorted[i].magnet_uri.split('%2f')[2]);
+                                console.log(stalledDLTimeScale+' 分钟内平均上传速度：'+(stalledDLAveUpspeed == '持续时间太短无法计算'?stalledDLAveUpspeed:(Math.round(stalledDLAveUpspeed/1024*100)/100+' KB/s')) + ' -> ' + torrentsSorted[i].name + ' -> ' + torrentsSorted[i].magnet_uri.split('%2f')[2]);
                                 if(
                                     stalledDLAveUpspeed != '持续时间太短无法计算' &&
                                     stalledDLAveUpspeed < averageUpSpeedScale * 1024 //平均上传速度小于设定值
@@ -398,16 +426,13 @@
                         nowTime = new Date();
                         console.log('%c' + nowTime.toLocaleTimeString() + '：本次检查共有 ' + willDelTorrentsSum + ' 个符合删除条件的种子','color:#f29766');
                     };
-                    let
-                        titleScrollInterval,
-                        l=0
-                    ;
+                    let titleScrollInterval;
                     if(fileDeletedTorrentsSum == 0 && diskFreeSpace < minFreeSpace * 1024 * 1024 * 1024){
-                        document.title = '红种警告：磁盘即将爆仓，请修改设置或手动删种　　';
+                        document.title = '红种警告：磁盘即将爆仓，请修改设置或手动删种　　　';
                         titleScrollInterval = setInterval(function(){
                             document.title = document.title.substring(1) + document.title.charAt(0);
-                            l++;
-                        },1000);
+                            titleChangedTimes++;
+                        },1500);
                         if(window.Notification && Notification.permission === "granted"){
                             let notify = new Notification('红种警告',{
                                 body:'磁盘即将爆仓，请修改设置或手动删种'
@@ -417,13 +442,13 @@
                             };
                         };
                         setTimeout(function(){
-                                nowTime = new Date();
-                                console.log('%c' + nowTime.toLocaleTimeString() + '：没有可删除文件的种子，磁盘即将爆仓，请检查种子分类、路径设置或修改脚本的保留分类、刷流路径或手动删种','background-color:#d12f2e;color:#e8eaed');
+                            nowTime = new Date();
+                            console.log('%c' + nowTime.toLocaleTimeString() + '：没有可删除文件的种子，磁盘即将爆仓，请检查种子分类、路径设置或修改脚本的保留分类、刷流路径或手动删种','background-color:#d12f2e;color:#e8eaed');
                         },2000);
-                    }else if(l > 0){
+                    }else if(titleChangedTimes > 0){
                         clearInterval(titleScrollInterval);
                         document.title = '';
-                        l = 0;
+                        titleChangedTimes = 0;
                     }
                 }
             }
